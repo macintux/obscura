@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { resolve } from 'node:path';
-import { cp, rm, access, readFile, symlink } from 'node:fs/promises';
+import { cp, rm, access, mkdir, readFile, rename, symlink } from 'node:fs/promises';
 import { build } from '../src/build.js';
 
 const FIXTURE_DIR = resolve(import.meta.dirname, 'fixtures', 'site');
@@ -12,7 +12,15 @@ describe('full build pipeline', () => {
     // Copy fixture to a work directory so we don't pollute
     await rm(WORK_DIR, { recursive: true, force: true });
     await cp(FIXTURE_DIR, WORK_DIR, { recursive: true });
+    const photoDir = resolve(WORK_DIR, 'site/content/photos/test-gallery');
+    for (const extension of ['jpg', 'yaml']) {
+      await rename(
+        resolve(photoDir, `test-photo.${extension}`),
+        resolve(photoDir, `test, photo.${extension}`),
+      );
+    }
     // Symlink the real editorial theme (built-in themes stay at project root)
+    await mkdir(resolve(WORK_DIR, 'themes'), { recursive: true });
     await symlink(THEME_SRC, resolve(WORK_DIR, 'themes', 'editorial'));
   });
 
@@ -116,9 +124,16 @@ describe('full build pipeline', () => {
   });
 
   it('generates image variants', async () => {
-    // Should have 400w and 800w variants (source is 100px, so only variants <= source width)
     const imgDir = resolve(WORK_DIR, 'dist', 'assets', 'images', 'test-gallery');
-    await expect(access(imgDir)).resolves.toBeUndefined();
+    await expect(access(resolve(imgDir, 'test, photo-100w.webp'))).resolves.toBeUndefined();
+  });
+
+  it('encodes photo filenames in image URLs', async () => {
+    const path = resolve(WORK_DIR, 'dist', 'photography', 'test-gallery', 'test-photo', 'index.html');
+    const html = await readFile(path, 'utf-8');
+    const url = '/assets/images/test-gallery/test%2C%20photo-100w.webp';
+    expect(html).toContain(`src="${url}"`);
+    expect(html).toContain(`srcset="${url} 100w"`);
   });
 
   it('photo page displays default license', async () => {

@@ -21,6 +21,10 @@ import { copyPhotoSwipeAssets } from './photoswipe.js';
 import { createRenderingEngine, renderAll } from './rendering.js';
 import type { BuildContext, Gallery, Photo } from './types.js';
 
+function encodeImagePath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+
 // ---------------------------------------------------------------------------
 // Build result
 // ---------------------------------------------------------------------------
@@ -176,8 +180,11 @@ export async function build(
         if (result) {
           return {
             ...photo,
-            variants: result.variants,
-            thumbnailPath: result.thumbnailPath,
+            variants: result.variants.map((variant) => ({
+              ...variant,
+              path: encodeImagePath(variant.path),
+            })),
+            thumbnailPath: encodeImagePath(result.thumbnailPath),
           };
         }
         return photo;
