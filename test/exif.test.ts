@@ -84,6 +84,12 @@ describe('readExif', () => {
             FocalLength: '35',
             ExposureTime: '0.004',
           },
+          IFD3: {
+            GPSLatitude: '39/1 30/1 0/1',
+            GPSLatitudeRef: 'N',
+            GPSLongitude: '86/1 15/1 0/1',
+            GPSLongitudeRef: 'W',
+          },
         })
         .jpeg()
         .toBuffer(),
@@ -108,6 +114,8 @@ describe('readExif', () => {
     expect(result.data.shutter_speed).toBe('1/250');
     expect(result.data.photographer).toBe('Jens');
     expect(result.data.date?.getUTCFullYear()).toBe(2024);
+    expect(result.data.gps_lat).toBe(39.5);
+    expect(result.data.gps_lon).toBe(-86.25);
   });
 
   it('warns without throwing when a file has no EXIF', async () => {
