@@ -1,7 +1,6 @@
-import { resolve } from 'node:path';
+import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import chokidar from 'chokidar';
 import { build } from './build.js';
 import { loadSiteConfig } from './config.js';
@@ -85,26 +84,47 @@ async function main(): Promise<void> {
 
   // Static file server
   const server = createServer((req, res) => {
-    let url = req.url ?? '/';
+    let pathname = (req.url ?? '/').split('?', 1)[0] ?? '/';
     // Strip base_path prefix so files resolve against dist/
-    if (basePath && url.startsWith(basePath)) {
-      url = url.slice(basePath.length) || '/';
+    if (
+      basePath &&
+      (pathname === basePath || pathname.startsWith(`${basePath}/`))
+    ) {
+      pathname = pathname.slice(basePath.length) || '/';
     }
-    let filePath = resolve(distDir, url === '/' ? 'index.html' : `.${url}`);
 
-    // Try index.html for directory paths
-    if (!extname(filePath)) {
-      filePath = filePath.endsWith('/')
-        ? resolve(filePath, 'index.html')
-        : `${filePath}/index.html`;
+    try {
+      pathname = decodeURIComponent(pathname);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Bad request');
+      return;
     }
 
     void (async () => {
       try {
-        const info = await stat(filePath);
+        let filePath = resolve(distDir, `.${pathname}`);
+        if (!extname(filePath)) {
+          filePath = resolve(filePath, 'index.html');
+        }
+
+        const [root, target] = await Promise.all([
+          realpath(distDir),
+          realpath(filePath),
+        ]);
+        const relativePath = relative(root, target);
+        if (
+          relativePath === '..' ||
+          relativePath.startsWith(`..${sep}`) ||
+          isAbsolute(relativePath)
+        ) {
+          throw new Error('Path is outside dist');
+        }
+
+        const info = await stat(target);
         if (!info.isFile()) throw new Error('Not a file');
 
-        const content = await readFile(filePath);
+        const content = await readFile(target);
         const ext = extname(filePath);
         const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
         res.writeHead(200, { 'Content-Type': contentType });
