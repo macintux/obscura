@@ -46,8 +46,10 @@ const EXIF_PICK_FIELDS = [
   'FNumber',
   'FocalLength',
   'ExposureTime',
-  'latitude',
-  'longitude',
+  'GPSLatitude',
+  'GPSLatitudeRef',
+  'GPSLongitude',
+  'GPSLongitudeRef',
   'Artist',
 ];
 
