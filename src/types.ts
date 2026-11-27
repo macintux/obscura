@@ -11,6 +11,10 @@ export interface ImageConfig {
    * smaller sources are never enlarged.
    */
   readonly max_dimension: number;
+  readonly watermark_image?: string;
+  readonly watermark_size?: number;
+  readonly watermark_inset?: number;
+  readonly watermark_opacity?: number;
 }
 
 /**

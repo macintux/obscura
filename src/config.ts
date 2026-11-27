@@ -81,6 +81,10 @@ interface RawImageConfig {
   breakpoints?: number[];
   webp_quality?: number;
   max_dimension?: number;
+  watermark_image?: string;
+  watermark_size?: number;
+  watermark_inset?: number;
+  watermark_opacity?: number;
 }
 
 interface RawGalleryEntry {
@@ -215,10 +219,51 @@ export function parseNavigation(
  * a positive integer; anything else is a config error rather than something to
  * silently paper over.
  */
-export function parseImageConfig(raw: RawImageConfig | undefined): ImageConfig {
+export function parseImageConfig(
+  raw: RawImageConfig | undefined,
+  projectRoot = '.',
+): ImageConfig {
   const breakpoints = raw?.breakpoints ?? DEFAULT_IMAGE_CONFIG.breakpoints;
   const webpQuality = raw?.webp_quality ?? DEFAULT_IMAGE_CONFIG.webp_quality;
   const maxDimension = raw?.max_dimension ?? DEFAULT_IMAGE_CONFIG.max_dimension;
+  const watermarkImage = raw?.watermark_image;
+  const watermarkSize = raw?.watermark_size;
+  const watermarkInset = raw?.watermark_inset;
+  const watermarkOpacity = raw?.watermark_opacity;
+
+  if (
+    watermarkSize !== undefined &&
+    (!Number.isFinite(watermarkSize) || watermarkSize <= 0 || watermarkSize > 1)
+  ) {
+    throw new Error(
+      'images.watermark_size must be greater than 0 and at most 1',
+    );
+  }
+  if (
+    watermarkInset !== undefined &&
+    (!Number.isFinite(watermarkInset) ||
+      watermarkInset < 0 ||
+      watermarkInset >= 0.5)
+  ) {
+    throw new Error(
+      'images.watermark_inset must be at least 0 and less than 0.5',
+    );
+  }
+  if (
+    watermarkOpacity !== undefined &&
+    (!Number.isFinite(watermarkOpacity) || watermarkOpacity < 0)
+  ) {
+    throw new Error(
+      'images.watermark_opacity must be a finite nonnegative multiplier',
+    );
+  }
+
+  if (
+    watermarkImage !== undefined &&
+    (typeof watermarkImage !== 'string' || watermarkImage.trim() === '')
+  ) {
+    throw new Error('images.watermark_image must be a nonempty file path');
+  }
 
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
     throw new Error(
@@ -240,6 +285,16 @@ export function parseImageConfig(raw: RawImageConfig | undefined): ImageConfig {
     breakpoints,
     webp_quality: webpQuality,
     max_dimension: maxDimension,
+    ...(watermarkSize === undefined ? {} : { watermark_size: watermarkSize }),
+    ...(watermarkInset === undefined
+      ? {}
+      : { watermark_inset: watermarkInset }),
+    ...(watermarkOpacity === undefined
+      ? {}
+      : { watermark_opacity: watermarkOpacity }),
+    ...(watermarkImage === undefined
+      ? {}
+      : { watermark_image: resolve(projectRoot, watermarkImage) }),
   };
 }
 
@@ -320,7 +375,7 @@ export async function loadSiteConfig(projectRoot: string): Promise<SiteConfig> {
         ? raw.hero_image
         : undefined,
     navigation: parseNavigation(raw.navigation),
-    images: parseImageConfig(raw.images),
+    images: parseImageConfig(raw.images, projectRoot),
   };
 }
 

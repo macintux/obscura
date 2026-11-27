@@ -6,6 +6,23 @@ afterEach(() => {
 });
 
 describe('parseImageConfig', () => {
+  it('passes through watermark controls', () => {
+    const settings = {
+      watermark_size: 0.35,
+      watermark_inset: 0.02,
+      watermark_opacity: 2.5,
+    };
+    expect(parseImageConfig(settings)).toMatchObject(settings);
+  });
+
+  it.each([
+    ['watermark_size', 0],
+    ['watermark_inset', 0.5],
+    ['watermark_opacity', -1],
+  ])('rejects an out-of-range %s', (key, value) => {
+    expect(() => parseImageConfig({ [key]: value })).toThrow(key);
+  });
+
   it('defaults max_dimension to 2400 when the images block is absent', () => {
     expect(parseImageConfig(undefined)).toEqual({
       breakpoints: [400, 800, 1200, 2400],
@@ -47,9 +64,7 @@ describe('parseImageConfig', () => {
       max_dimension: 300,
     });
     expect(config.max_dimension).toBe(300);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('max_dimension'),
-    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('max_dimension'));
   });
 
   it('does not warn when max_dimension covers the smallest breakpoint', () => {

@@ -1,9 +1,11 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { resolve, basename, extname } from 'node:path';
 import sharp from 'sharp';
 import type { ImageConfig, ImageVariant, Photo } from './types.js';
 
 const THUMBNAIL_WIDTH = 400;
+const WATERMARK_SIZE = 0.2;
+const WATERMARK_INSET = 0.03;
 
 /**
  * Version of the image-processing logic itself.
@@ -55,12 +57,22 @@ export interface ProcessPhotoResult {
   readonly thumbnailPath: string;
 }
 
+export async function loadWatermark(
+  config: ImageConfig,
+): Promise<Buffer | undefined> {
+  if (config.watermark_image === undefined || config.watermark_opacity === 0)
+    return undefined;
+  return readFile(config.watermark_image);
+}
+
 export async function processPhoto(
   sourcePath: string,
   gallerySlug: string,
   distDir: string,
   config: ImageConfig,
+  watermark?: Buffer,
 ): Promise<ProcessPhotoResult> {
+  watermark ??= await loadWatermark(config);
   const photoBase = basename(sourcePath, extname(sourcePath));
   const outDir = outputDir(distDir, gallerySlug);
   await ensureDir(outDir);
@@ -79,6 +91,54 @@ export async function processPhoto(
     config.max_dimension,
   );
   const effectiveWidth = effective.width;
+  const watermarkSize = config.watermark_size ?? WATERMARK_SIZE;
+  const watermarkInset = config.watermark_inset ?? WATERMARK_INSET;
+  const watermarkOpacity = config.watermark_opacity ?? 1;
+
+  async function writeVariant(width: number, outPath: string) {
+    const variant = sharp(sourcePath).resize(width, undefined, {
+      withoutEnlargement: true,
+    });
+
+    if (watermark) {
+      const height = Math.max(
+        1,
+        Math.round((sourceHeight * width) / sourceWidth),
+      );
+      const shortSide = Math.min(width, height);
+      const inset = Math.floor(shortSide * watermarkInset);
+      const size = Math.max(
+        1,
+        Math.min(Math.floor(shortSide * watermarkSize), shortSide - 2 * inset),
+      );
+      const { data, info } = await sharp(watermark)
+        .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+        .toColourspace('srgb')
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      if (watermarkOpacity !== 1) {
+        for (let alpha = 3; alpha < data.length; alpha += 4) {
+          data[alpha] = Math.min(
+            255,
+            Math.round(data.readUInt8(alpha) * watermarkOpacity),
+          );
+        }
+      }
+
+      variant.composite([
+        {
+          input: data,
+          raw: { width: info.width, height: info.height, channels: 4 },
+          left: width - info.width - inset,
+          top: height - info.height - inset,
+        },
+      ]);
+    }
+
+    return variant.webp({ quality: config.webp_quality }).toFile(outPath);
+  }
 
   const variants: ImageVariant[] = [];
 
@@ -91,10 +151,7 @@ export async function processPhoto(
     const filename = variantFilename(photoBase, breakpoint);
     const outPath = resolve(outDir, filename);
 
-    const info = await sharp(sourcePath)
-      .resize(breakpoint, undefined, { withoutEnlargement: true })
-      .webp({ quality: config.webp_quality })
-      .toFile(outPath);
+    const info = await writeVariant(breakpoint, outPath);
 
     variants.push({
       width: info.width,
@@ -121,10 +178,7 @@ export async function processPhoto(
     const filename = variantFilename(photoBase, effectiveWidth);
     const outPath = resolve(outDir, filename);
 
-    const info = await sharp(sourcePath)
-      .resize(effectiveWidth, undefined, { withoutEnlargement: true })
-      .webp({ quality: config.webp_quality })
-      .toFile(outPath);
+    const info = await writeVariant(effectiveWidth, outPath);
 
     variants.push({
       width: info.width,
@@ -154,6 +208,7 @@ export async function processAllPhotos(
   config: ImageConfig,
 ): Promise<Map<string, ProcessPhotoResult>> {
   const results = new Map<string, ProcessPhotoResult>();
+  const watermark = await loadWatermark(config);
 
   for (let i = 0; i < galleries.length; i++) {
     const photos = galleries[i];
@@ -166,6 +221,7 @@ export async function processAllPhotos(
         gallerySlug,
         distDir,
         config,
+        watermark,
       );
       results.set(photo.slug, result);
     }
