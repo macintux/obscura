@@ -2,7 +2,11 @@ import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { ImageConfig, ImageVariant } from './types.js';
-import { processPhoto, IMAGE_PIPELINE_VERSION } from './image-processing.js';
+import {
+  processPhoto,
+  loadWatermark,
+  IMAGE_PIPELINE_VERSION,
+} from './image-processing.js';
 import type { ProcessPhotoResult } from './image-processing.js';
 
 const CACHE_DIR = '.cache';
@@ -51,7 +55,10 @@ async function computeFileHash(filePath: string): Promise<string> {
   return createHash('sha256').update(content).digest('hex');
 }
 
-function computeParamsHash(config: ImageConfig): string {
+function computeParamsHash(
+  config: ImageConfig,
+  watermark: Buffer | undefined,
+): string {
   const params = JSON.stringify({
     // The pipeline version is part of the key so that changes to the image
     // processing code invalidate the cache, not just changes to config.
@@ -59,6 +66,12 @@ function computeParamsHash(config: ImageConfig): string {
     breakpoints: config.breakpoints,
     webp_quality: config.webp_quality,
     max_dimension: config.max_dimension,
+    watermark: watermark && {
+      hash: createHash('sha256').update(watermark).digest('hex'),
+      size: config.watermark_size,
+      inset: config.watermark_inset,
+      opacity: config.watermark_opacity,
+    },
   });
   return createHash('sha256').update(params).digest('hex');
 }
@@ -95,11 +108,31 @@ export async function processPhotoWithCache(
   config: ImageConfig,
   manifest: CacheManifest,
 ): Promise<CachedProcessResult> {
-  const fileHash = await computeFileHash(sourcePath);
-  const paramsHash = computeParamsHash(config);
-  const cacheKey = computeCacheKey(fileHash, paramsHash);
+  const watermark = await loadWatermark(config);
+  const cacheKey = computeCacheKey(
+    await computeFileHash(sourcePath),
+    computeParamsHash(config, watermark),
+  );
+  return processCachedPhoto(
+    sourcePath,
+    gallerySlug,
+    distDir,
+    config,
+    watermark,
+    cacheKey,
+    manifest.entries[photoSlug],
+  );
+}
 
-  const cached = manifest.entries[photoSlug];
+async function processCachedPhoto(
+  sourcePath: string,
+  gallerySlug: string,
+  distDir: string,
+  config: ImageConfig,
+  watermark: Buffer | undefined,
+  cacheKey: string,
+  cached: CacheEntry | undefined,
+): Promise<CachedProcessResult> {
   if (
     cached &&
     cached.hash === cacheKey &&
@@ -114,7 +147,13 @@ export async function processPhotoWithCache(
     };
   }
 
-  const result = await processPhoto(sourcePath, gallerySlug, distDir, config);
+  const result = await processPhoto(
+    sourcePath,
+    gallerySlug,
+    distDir,
+    config,
+    watermark,
+  );
 
   return { result, fromCache: false };
 }
@@ -132,16 +171,23 @@ export async function processAllPhotosWithCache(
   const manifest = await loadCacheManifest(projectDir);
   const results = new Map<string, ProcessPhotoResult>();
   const newEntries: Record<string, CacheEntry> = { ...manifest.entries };
+  const watermark = await loadWatermark(config);
+  const paramsHash = computeParamsHash(config, watermark);
   let cacheHits = 0;
 
   for (const photo of photos) {
-    const { result, fromCache } = await processPhotoWithCache(
+    const cacheKey = computeCacheKey(
+      await computeFileHash(photo.sourcePath),
+      paramsHash,
+    );
+    const { result, fromCache } = await processCachedPhoto(
       photo.sourcePath,
-      photo.slug,
       photo.gallerySlug,
       distDir,
       config,
-      manifest,
+      watermark,
+      cacheKey,
+      manifest.entries[photo.slug],
     );
 
     results.set(photo.slug, result);
@@ -149,10 +195,8 @@ export async function processAllPhotosWithCache(
     if (fromCache) {
       cacheHits++;
     } else {
-      const fileHash = await computeFileHash(photo.sourcePath);
-      const paramsHash = computeParamsHash(config);
       newEntries[photo.slug] = {
-        hash: computeCacheKey(fileHash, paramsHash),
+        hash: cacheKey,
         variants: result.variants,
         thumbnailPath: result.thumbnailPath,
       };

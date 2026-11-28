@@ -19,6 +19,7 @@ Your content lives in Markdown and YAML. Your site belongs to you.
 ## Features
 
 - **Automatic image processing** — resizes at configurable breakpoints, converts to WebP, generates thumbnails and `srcset` for responsive loading. Output is capped at a configurable longest side (`images.max_dimension`, default 2400px) so huge originals don't ship as huge WebPs. Powered by [sharp](https://sharp.pixelplumbing.com/).
+- **Optional photo watermark** — set `images.watermark_image` in `site/config/site.yaml` to a project-relative path to an image such as a transparent PNG. Obscura adds it to the bottom-right corner of each responsive photo variant and leaves the separate thumbnails untouched. Set `watermark_size` (default `0.20`) and `watermark_inset` (default `0.03`) under `images` as fractions of the shorter edge. Set `watermark_opacity` to scale the artwork's alpha (`1` preserves it, values above `1` strengthen it, and `0` disables the watermark).
 - **EXIF extraction** — camera, lens, date, GPS coordinates pulled straight from your files. No manual data entry required.
 - **Sidecar metadata** — auto-generated YAML sidecars let you add titles, locations, captions, and tags. An interactive CLI editor (`npm run sidecar`) walks you through each photo.
 - **Photo shortcodes in blog posts** — embed any photo in a blog post with `{{< photo "gallery/shot" >}}`. Renders as a styled card with metadata. Cross-references link back from photos to the posts that feature them.
