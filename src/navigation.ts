@@ -1,11 +1,15 @@
 import type { SiteConfig, Page, ResolvedNavItem } from './types.js';
+import {
+  collectionNavKey,
+  DEFAULT_POST_COLLECTION,
+} from './post-collections.js';
+import type { PostCollectionConfig } from './post-collections.js';
 
 /** Built-in route keywords and their URL paths. */
 const BUILTIN_ROUTES: Readonly<Record<string, string>> = {
   photography: '/photography/',
   tags: '/tags/',
   locations: '/locations/',
-  blog: '/blog/',
 };
 
 /**
@@ -19,30 +23,40 @@ const DEFAULT_NAV: readonly { readonly label: string; readonly url: string }[] =
     { label: 'Photography', url: 'photography' },
     { label: 'Tags', url: 'tags' },
     { label: 'Locations', url: 'locations' },
-    { label: 'Blog', url: 'blog' },
     { label: 'About', url: '/about/' },
     { label: 'Contact', url: '/contact/' },
   ];
 
 /**
  * Resolve navigation items from config into fully-resolved nav entries.
- * When `config.navigation` is omitted, uses the default 6-item menu.
- * Throws on `page:<slug>` references that don't match any loaded page.
+ * When `config.navigation` is omitted, uses the default menu with links to each collection.
+ * Throws when a page or collection reference cannot be resolved.
  */
 export function resolveNavigation(
   config: SiteConfig,
   pages: readonly Page[],
+  collections: readonly PostCollectionConfig[] = [DEFAULT_POST_COLLECTION],
 ): readonly ResolvedNavItem[] {
-  const items = config.navigation ?? DEFAULT_NAV;
+  const items = config.navigation ?? [
+    ...DEFAULT_NAV.slice(0, 3),
+    ...collections.map(({ key, title }) => ({
+      label: title,
+      url: `posts:${key}`,
+    })),
+    ...DEFAULT_NAV.slice(3),
+  ];
   const pageSlugs = new Set(pages.map((p) => p.slug));
 
-  return items.map((item) => resolveNavItem(item, config.base_path, pageSlugs));
+  return items.map((item) =>
+    resolveNavItem(item, config.base_path, pageSlugs, collections),
+  );
 }
 
 function resolveNavItem(
   item: { readonly label: string; readonly url: string },
   basePath: string,
   pageSlugs: ReadonlySet<string>,
+  collections: readonly PostCollectionConfig[],
 ): ResolvedNavItem {
   const { label, url } = item;
 
@@ -69,6 +83,22 @@ function resolveNavItem(
     };
   }
 
+  if (url === 'blog' || url.startsWith('posts:')) {
+    const key = url === 'blog' ? url : url.slice(6);
+    const collection = collections.find((entry) => entry.key === key);
+    if (!collection) {
+      throw new Error(
+        `Navigation error: post collection "${key}" not found (nav item "${label}")`,
+      );
+    }
+    return {
+      label,
+      href: `${basePath}${collection.url}`,
+      navKey: collectionNavKey(collection),
+      external: false,
+    };
+  }
+
   // Built-in route keyword
   const builtinPath = BUILTIN_ROUTES[url];
   if (builtinPath) {
@@ -84,7 +114,10 @@ function resolveNavItem(
   if (url.startsWith('/')) {
     // Derive navKey from simple /<slug>/ paths for active-link highlighting
     const slugMatch = /^\/([^/]+)\/$/.exec(url);
-    const navKey = slugMatch?.[1] ?? null;
+    const collection = collections.find((entry) => entry.url === url);
+    const navKey = collection
+      ? collectionNavKey(collection)
+      : (slugMatch?.[1] ?? null);
     return { label, href: `${basePath}${url}`, navKey, external: false };
   }
 

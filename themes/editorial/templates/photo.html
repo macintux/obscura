@@ -157,7 +157,7 @@
         <ul class="photo-backlinks__list">
           {% for post in back_links %}
           <li>
-            <a href="{{ ('/blog/' + post.slug + '/') | url }}">{{ post.frontmatter.title }}</a>
+            <a href="{{ post | posturl | url }}">{{ post.frontmatter.title }}</a>
           </li>
           {% endfor %}
         </ul>

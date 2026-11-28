@@ -6,11 +6,12 @@ import { generateAllSidecars } from './sidecar.js';
 import { validateAllGalleryFormats } from './image-validation.js';
 import { loadGalleries } from './gallery.js';
 import {
-  loadAllBlogPosts,
   loadAllPages,
   loadHomepageContent,
   loadGalleryContent,
 } from './markdown.js';
+import { loadPostCollections, validatePostRoutes } from './post-collections.js';
+import { resolveNavigation } from './navigation.js';
 import { buildCrossReferenceGraph } from './crossref.js';
 import { buildTagPages } from './tags.js';
 import { buildLocationPages } from './locations.js';
@@ -59,39 +60,10 @@ export async function build(
   // -- 2. Resolve directories --
   const siteDir = resolve(projectDir, 'site');
   const photosDir = resolve(siteDir, 'content', 'photos');
-  const postsDir = resolve(siteDir, 'content', 'posts');
   const pagesDir = resolve(siteDir, 'content', 'pages');
   const userThemesDir = resolve(siteDir, 'themes');
   const builtinThemesDir = resolve(projectDir, 'themes');
   const distDir = resolve(projectDir, 'dist');
-
-  // -- 3. Clean dist --
-  if (options.clean) {
-    // Full wipe: remove dist/ and .cache/ entirely
-    await rm(distDir, { recursive: true, force: true });
-    await rm(resolve(projectDir, '.cache'), { recursive: true, force: true });
-    await mkdir(distDir, { recursive: true });
-  } else {
-    // Incremental: preserve dist/assets/images/ for cache hits
-    const imagesDir = resolve(distDir, 'assets', 'images');
-    try {
-      const entries = await readdir(distDir);
-      for (const entry of entries) {
-        if (entry === 'assets') continue;
-        await rm(resolve(distDir, entry), { recursive: true, force: true });
-      }
-      // Clean non-image assets (theme, vendor) but keep images/
-      const assetsDir = resolve(distDir, 'assets');
-      const assetEntries = await readdir(assetsDir);
-      for (const entry of assetEntries) {
-        if (entry === 'images') continue;
-        await rm(resolve(assetsDir, entry), { recursive: true, force: true });
-      }
-    } catch {
-      // dist/ doesn't exist yet — that's fine
-    }
-    await mkdir(imagesDir, { recursive: true });
-  }
 
   // -- 4. Validate image formats (hard error on unsupported) --
   const gallerySlugs = galleryConfig.galleries.map((g) => g.slug);
@@ -139,12 +111,17 @@ export async function build(
     siteConfig.base_path,
   );
 
-  // -- 7. Load blog posts (with shortcode resolution) --
-  const posts = await loadAllBlogPosts(
-    postsDir,
+  // -- 7. Load post collections (with shortcode resolution) --
+  const postCollections = await loadPostCollections(
+    projectDir,
     slugIndex,
     siteConfig.base_path,
   );
+  const posts = postCollections
+    .flatMap((collection) => collection.posts)
+    .sort(
+      (a, b) => b.frontmatter.date.getTime() - a.frontmatter.date.getTime(),
+    );
 
   // -- 8. Load pages and optional homepage content --
   const pages = await loadAllPages(pagesDir, siteConfig.base_path);
@@ -153,8 +130,39 @@ export async function build(
     siteConfig.base_path,
   );
 
+  validatePostRoutes(postCollections, pages);
+  resolveNavigation(siteConfig, pages, postCollections);
+
   // -- 9. Build cross-reference graph --
   const crossReferences = buildCrossReferenceGraph(posts);
+
+  // Clean generated output after validating content and routes.
+  if (options.clean) {
+    // Full wipe: remove dist/ and .cache/ entirely
+    await rm(distDir, { recursive: true, force: true });
+    await rm(resolve(projectDir, '.cache'), { recursive: true, force: true });
+    await mkdir(distDir, { recursive: true });
+  } else {
+    // Incremental: preserve dist/assets/images/ for cache hits
+    const imagesDir = resolve(distDir, 'assets', 'images');
+    try {
+      const entries = await readdir(distDir);
+      for (const entry of entries) {
+        if (entry === 'assets') continue;
+        await rm(resolve(distDir, entry), { recursive: true, force: true });
+      }
+      // Clean non-image assets (theme, vendor) but keep images/
+      const assetsDir = resolve(distDir, 'assets');
+      const assetEntries = await readdir(assetsDir);
+      for (const entry of assetEntries) {
+        if (entry === 'images') continue;
+        await rm(resolve(assetsDir, entry), { recursive: true, force: true });
+      }
+    } catch {
+      // dist/ doesn't exist yet — that's fine
+    }
+    await mkdir(imagesDir, { recursive: true });
+  }
 
   // -- 10. Process images (resize, WebP, thumbnails, with cache) --
   const allPhotos = galleriesWithContent.flatMap((g) =>
@@ -231,6 +239,7 @@ export async function build(
     siteConfig,
     galleries: galleriesWithImages,
     posts,
+    postCollections,
     pages,
     crossReferences,
     tagPages,
@@ -246,15 +255,15 @@ export async function build(
     (sum, g) => sum + g.photos.length,
     0,
   );
-  // Pages: homepage + gallery index + galleries + photos + blog index + posts + pages + 404 + feed + sitemap
+  // Pages: homepage + gallery index + galleries + photos + collection indexes + posts + pages + 404 + feed + sitemap
   const listedGalleries = galleriesWithImages.filter((g) => g.listed);
   const pageCount =
     1 + // homepage
     1 + // gallery index
     listedGalleries.length + // gallery pages
     photoCount + // photo permalinks
-    1 + // blog index
-    posts.length + // blog posts
+    postCollections.length + // collection indexes
+    posts.length + // posts
     pages.length + // pages
     (tagPages.length > 0 ? 1 + tagPages.length : 0) + // tag index + tag pages
     (locationPages.length > 0 ? 1 + locationPages.length : 0) + // location index + location pages

@@ -2,9 +2,12 @@ import { resolve } from 'node:path';
 import { loadSiteConfig, loadGalleryConfig } from './config.js';
 import { validateAllGalleryFormats } from './image-validation.js';
 import { loadGalleries } from './gallery.js';
-import { loadAllBlogPosts, loadAllPages } from './markdown.js';
+import { loadAllPages } from './markdown.js';
+import { loadPostCollections, validatePostRoutes } from './post-collections.js';
+import { resolveNavigation } from './navigation.js';
 import { formatExifWarnings } from './exif.js';
 import { loadTheme } from './theme.js';
+import type { SlugIndex } from './slugs.js';
 
 /**
  * Content validation — fast check without image processing.
@@ -72,11 +75,11 @@ async function main(): Promise<void> {
   }
 
   // -- 4. Galleries (EXIF + sidecars + slug uniqueness) --
+  let slugIndex: SlugIndex | undefined;
   try {
-    const { slugIndex, warnings: galleryWarnings } = await loadGalleries(
-      photosDir,
-      galleryConfig.galleries,
-    );
+    const { slugIndex: loadedSlugIndex, warnings: galleryWarnings } =
+      await loadGalleries(photosDir, galleryConfig.galleries);
+    slugIndex = loadedSlugIndex;
     console.log(
       `  ✓ galleries (${String(gallerySlugs.length)} configured, ${String(slugIndex.size)} photos indexed)`,
     );
@@ -89,30 +92,26 @@ async function main(): Promise<void> {
     hasErrors = true;
   }
 
-  // -- 5. Blog posts (shortcode resolution) --
-  const postsDir = resolve(projectDir, 'site', 'content', 'posts');
+  // -- 5. Pages, post collections, and navigation --
   try {
-    // We need slugIndex for shortcode validation — re-load if galleries succeeded
-    const { slugIndex } = await loadGalleries(
-      photosDir,
-      galleryConfig.galleries,
-    );
-    const posts = await loadAllBlogPosts(postsDir, slugIndex, '');
-    console.log(`  ✓ blog posts (${String(posts.length)})`);
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'unknown error';
-    console.error(`  ✗ blog posts: ${msg}`);
-    hasErrors = true;
-  }
-
-  // -- 6. Pages --
-  const pagesDir = resolve(projectDir, 'site', 'content', 'pages');
-  try {
-    const pages = await loadAllPages(pagesDir, '');
+    const pagesDir = resolve(projectDir, 'site', 'content', 'pages');
+    const pages = await loadAllPages(pagesDir, siteConfig.base_path);
     console.log(`  ✓ pages (${String(pages.length)})`);
+    if (slugIndex) {
+      const collections = await loadPostCollections(
+        projectDir,
+        slugIndex,
+        siteConfig.base_path,
+      );
+      validatePostRoutes(collections, pages);
+      resolveNavigation(siteConfig, pages, collections);
+      console.log(
+        `  ✓ post collections (${String(collections.length)}) and navigation`,
+      );
+    }
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'unknown error';
-    console.error(`  ✗ pages: ${msg}`);
+    console.error(`  ✗ content: ${msg}`);
     hasErrors = true;
   }
 

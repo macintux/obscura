@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% set nav_current = 'blog' %}
+{% set nav_current = nav_key %}
 
-{% block title %}Blog — {{ site.title }}{% endblock %}
-{% block description %}Blog posts from {{ site.title }}{% endblock %}
+{% block title %}{{ collection.title }} — {{ site.title }}{% endblock %}
+{% block description %}{{ collection.title }} posts from {{ site.title }}{% endblock %}
 
 {% block content %}
 <div class="content content--narrow">
-  <h1 class="page-title">Blog</h1>
+  <h1 class="page-title">{{ collection.title }}</h1>
 
   {% if posts.length %}
   <div class="post-list">
@@ -17,7 +17,7 @@
         {{ post.frontmatter.date | datereadable }}
       </time>
       <h2 class="post-list__title">
-        <a href="{{ ('/blog/' + post.slug + '/') | url }}">{{ post.frontmatter.title }}</a>
+        <a href="{{ post | posturl | url }}">{{ post.frontmatter.title }}</a>
       </h2>
       {% if post.frontmatter.summary %}
       <p class="post-list__summary">{{ post.frontmatter.summary }}</p>
