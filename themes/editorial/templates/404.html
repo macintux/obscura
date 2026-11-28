@@ -10,7 +10,9 @@
     <div class="error-page__links">
       <a href="{{ '/' | url }}">Homepage</a>
       <a href="{{ '/photography/' | url }}">Photography</a>
-      <a href="{{ '/blog/' | url }}">Blog</a>
+      {% for collection in post_collections %}
+      <a href="{{ collection.url | url }}">{{ collection.title }}</a>
+      {% endfor %}
     </div>
   </div>
 </div>

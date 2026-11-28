@@ -22,6 +22,12 @@ import {
 } from './responsive.js';
 import { slugifyTag, slugifyLocation } from './slugs.js';
 import type { ResolvedNavItem } from './types.js';
+import {
+  collectionNavKey,
+  DEFAULT_POST_COLLECTION,
+  postUrl,
+} from './post-collections.js';
+import type { PostCollectionConfig } from './post-collections.js';
 import { resolveNavigation } from './navigation.js';
 import { dateParts, formatPhotoDate, isPhotoDate } from './photo-date.js';
 
@@ -160,6 +166,8 @@ export function createRenderingEngine(
     if (typeof location !== 'string') return '';
     return slugifyLocation(location);
   });
+
+  env.addFilter('posturl', postUrl);
 
   // URL builder: {{ "/photography/" | url }} → base-path-relative path
   env.addFilter('url', (path: unknown) => {
@@ -367,28 +375,32 @@ export async function renderPhotoPage(
   );
 }
 
-/** Render the blog index (/blog/) */
+/** Render a post collection index. */
 export async function renderBlogIndex(
   engine: RenderingEngine,
   posts: readonly BlogPost[],
   distDir: string,
+  collection: PostCollectionConfig = DEFAULT_POST_COLLECTION,
 ): Promise<void> {
   await renderToFile(
     engine,
     'blog-index.html',
-    { posts },
+    { posts, collection, nav_key: collectionNavKey(collection) },
     distDir,
-    'blog/index.html',
+    `${collection.url.slice(1)}index.html`,
   );
 }
 
-/** Render a single blog post (/blog/<slug>/) */
+/** Render a post at its collection URL. */
 export async function renderBlogPost(
   engine: RenderingEngine,
   post: BlogPost,
   galleries: readonly Gallery[],
   distDir: string,
 ): Promise<void> {
+  const url = postUrl(post);
+  const navKey = url.slice(1, url.lastIndexOf('/', url.length - 2));
+
   // Replace shortcodes in rendered content with photo cards
   const photoIndex = buildPhotoIndex(galleries);
   const content = replaceShortcodes(
@@ -406,9 +418,9 @@ export async function renderBlogPost(
   await renderToFile(
     engine,
     'blog-post.html',
-    { post: postWithCards, og_image: ogImage },
+    { post: postWithCards, og_image: ogImage, nav_key: navKey },
     distDir,
-    `blog/${post.slug}/index.html`,
+    `${url.slice(1)}index.html`,
   );
 }
 
@@ -499,8 +511,15 @@ export async function renderLocationPage(
 export async function render404(
   engine: RenderingEngine,
   distDir: string,
+  collections: readonly PostCollectionConfig[] = [DEFAULT_POST_COLLECTION],
 ): Promise<void> {
-  await renderToFile(engine, '404.html', {}, distDir, '404.html');
+  await renderToFile(
+    engine,
+    '404.html',
+    { post_collections: collections },
+    distDir,
+    '404.html',
+  );
 }
 
 /** Render the RSS feed (/feed.xml) */
@@ -528,6 +547,7 @@ export async function renderSitemap(
       pages,
       tag_pages: tagPages,
       location_pages: locationPages,
+      post_collections: context.postCollections ?? [DEFAULT_POST_COLLECTION],
     },
     distDir,
     'sitemap.xml',
@@ -556,12 +576,14 @@ export async function renderAll(
     locationPages,
     homepageContent,
     galleryIndexContent,
+    postCollections = [{ ...DEFAULT_POST_COLLECTION, posts }],
   } = context;
 
   // Resolve navigation and inject as global template variable
   const navItems: readonly ResolvedNavItem[] = resolveNavigation(
     siteConfig,
     pages,
+    postCollections,
   );
   engine.env.addGlobal('nav_items', navItems);
 
@@ -579,13 +601,17 @@ export async function renderAll(
 
     for (const photo of gallery.photos) {
       const postSlugs = getBackLinkSlugs(crossReferences, photo.slug);
-      const backLinks = posts.filter((p) => postSlugs.includes(p.slug));
+      const backLinks = posts.filter((p) =>
+        postSlugs.includes(p.url ?? p.slug),
+      );
       await renderPhotoPage(engine, photo, gallery, backLinks, distDir);
     }
   }
 
-  // Blog
-  await renderBlogIndex(engine, posts, distDir);
+  // Post collections
+  for (const collection of postCollections) {
+    await renderBlogIndex(engine, collection.posts, distDir, collection);
+  }
   for (const post of posts) {
     await renderBlogPost(engine, post, galleries, distDir);
   }
@@ -612,7 +638,7 @@ export async function renderAll(
   }
 
   // 404
-  await render404(engine, distDir);
+  await render404(engine, distDir, postCollections);
 
   // RSS feed
   await renderRssFeed(engine, posts, distDir);

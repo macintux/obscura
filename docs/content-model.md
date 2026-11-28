@@ -205,8 +205,10 @@ Each item has a `label` (display text) and a `url` (link target):
 
 | URL format | Example | Description |
 |-----------|---------|-------------|
-| Built-in keyword | `photography`, `tags`, `locations`, `blog` | Links to the corresponding section |
+| Built-in keyword | `photography`, `tags`, `locations` | Links to the corresponding section |
+| Blog alias | `blog` | Links to the collection with the key `blog` |
 | Page reference | `page:about` | Links to a page in `site/content/pages/`. Build fails if the page doesn't exist |
+| Post collection | `posts:indiana-history` | Links to a collection defined in `site/config/posts.yaml` |
 | Literal path | `/custom/page/` | Used as-is (with `base_path` prepended) |
 | External URL | `https://prints.example.com` | Opens in a new tab |
 
@@ -298,7 +300,7 @@ galleries:
 
 ## Blog Posts
 
-Markdown files in `site/content/posts/`. The filename (without `.md`) becomes the URL slug.
+By default, Markdown files in `site/content/posts/` appear under `/blog/`. The filename (without `.md`) becomes the URL slug.
 
 ### Frontmatter
 
@@ -319,6 +321,37 @@ summary: A short description for the blog index
 | `date`    | date     | yes      | Publication date                      |
 | `tags`    | string[] | yes      | Tags (can be empty `[]`)              |
 | `summary` | string   | no       | Shown on blog index and RSS feed      |
+
+### Post collections
+
+Create `site/config/posts.yaml` to give each series its own title, source directory, and URL.
+
+```yaml
+collections:
+  indiana-history:
+    title: Backroads and Indiana history
+    source: posts/indiana-history
+    url: /backroads-indiana/
+  erlang:
+    title: Erlang
+    source: posts/erlang
+    url: /erlang/
+```
+
+Sources are directories relative to `site/content/`. Each collection lists the Markdown files directly inside its source directory, newest first by frontmatter date. For example, `site/content/posts/indiana-history/covered-bridges.md` appears on the `/backroads-indiana/` index and has its own page at `/backroads-indiana/covered-bridges/`. The same filename can appear in multiple collections with distinct URLs.
+
+The default navigation adds a link for each collection. If you define your own menu in `site.yaml`, use `url: posts:indiana-history` to link by collection key. The RSS feed includes posts from all collections, newest first.
+
+Without `posts.yaml`, the generator uses `site/content/posts/` and `/blog/`. With the file present, it generates the collections you list. To keep the original blog alongside other collections, add the following entry under `collections`:
+
+```yaml
+  blog:
+    title: Blog
+    source: posts
+    url: /blog/
+```
+
+Use `collections: {}` to generate a site without any post collections. Each configured source directory must exist. Choose collection URLs outside the routes reserved for photography, tags, locations, and assets, and avoid URLs already used by pages or other collections.
 
 ### Photo Shortcode
 

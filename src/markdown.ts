@@ -193,6 +193,7 @@ export async function loadAllBlogPosts(
   postsDir: string,
   slugIndex: SlugIndex,
   basePath: string,
+  requireDirectory = false,
 ): Promise<BlogPost[]> {
   let entries: string[];
   try {
@@ -200,7 +201,9 @@ export async function loadAllBlogPosts(
     entries = dirEntries
       .filter((f) => extname(f).toLowerCase() === '.md')
       .sort();
-  } catch {
+  } catch (error) {
+    if (requireDirectory || (error as NodeJS.ErrnoException).code !== 'ENOENT')
+      throw error;
     return [];
   }
 

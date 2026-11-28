@@ -7,15 +7,16 @@ export function buildCrossReferenceGraph(
   const postToPhotoSlugs = new Map<string, string[]>();
 
   for (const post of posts) {
+    const postKey = post.url ?? post.slug;
     const uniquePhotos = [...new Set(post.referencedPhotos)];
-    postToPhotoSlugs.set(post.slug, uniquePhotos);
+    postToPhotoSlugs.set(postKey, uniquePhotos);
 
     for (const photoSlug of uniquePhotos) {
       const existing = photoToPostSlugs.get(photoSlug);
       if (existing) {
-        existing.push(post.slug);
+        existing.push(postKey);
       } else {
-        photoToPostSlugs.set(photoSlug, [post.slug]);
+        photoToPostSlugs.set(photoSlug, [postKey]);
       }
     }
   }

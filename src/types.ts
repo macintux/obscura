@@ -249,6 +249,7 @@ export interface BlogPostFrontmatter {
 }
 
 export interface BlogPost {
+  readonly url?: string;
   readonly slug: string;
   readonly frontmatter: BlogPostFrontmatter;
   readonly content: string;
@@ -313,6 +314,7 @@ export interface CrossReferenceGraph {
 // ---------------------------------------------------------------------------
 
 export interface BuildContext {
+  readonly postCollections?: readonly import('./post-collections.js').PostCollection[];
   readonly siteConfig: SiteConfig;
   readonly galleries: readonly Gallery[];
   readonly posts: readonly BlogPost[];

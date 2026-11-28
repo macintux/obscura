@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { cp, rm, access, mkdir, readFile, rename, symlink } from 'node:fs/promises';
+import { cp, rm, access, mkdir, readFile, rename, symlink, writeFile, mkdtemp } from 'node:fs/promises';
 import { build } from '../src/build.js';
 
 const FIXTURE_DIR = resolve(import.meta.dirname, 'fixtures', 'site');
@@ -202,4 +203,73 @@ describe('full build pipeline', () => {
     expect(html).toContain('aria-controls="site-nav"');
     expect(html).toContain('id="site-nav"');
   });
+});
+
+it('builds independent post collections and uses their URLs across the site', async () => {
+  const dir = await mkdtemp(resolve(tmpdir(), 'obscura-collections-'));
+  try {
+    await cp(FIXTURE_DIR, dir, { recursive: true });
+    await mkdir(resolve(dir, 'themes'));
+    await symlink(THEME_SRC, resolve(dir, 'themes/editorial'));
+    const config = resolve(dir, 'site/config');
+    const posts = resolve(dir, 'site/content/posts');
+    await mkdir(resolve(posts, 'erlang'));
+    await writeFile(resolve(config, 'site.yaml'), `
+base_url: https://test.example.com/portfolio
+navigation:
+  - label: Indiana History
+    url: posts:history
+  - label: Erlang
+    url: /notes/erlang/
+`);
+    await writeFile(resolve(config, 'posts.yaml'), `
+collections:
+  history:
+    title: Indiana History
+    source: posts
+    url: /history
+  erlang:
+    title: Erlang
+    source: posts/erlang
+    url: /notes/erlang/
+`);
+    await writeFile(resolve(posts, 'newer.md'), '---\ntitle: Newer History\ndate: 2025-01-01\ntags: []\n---\n');
+    await writeFile(resolve(posts, 'erlang/hello-world.md'), '---\ntitle: Erlang Hello\ndate: 2026-01-01\ntags: []\n---\n');
+
+    await build(dir);
+    const output = (file: string) => readFile(resolve(dir, 'dist', file), 'utf8');
+    const history = await output('history/index.html');
+    expect(history).toContain('<h1 class="page-title">Indiana History</h1>');
+    expect(history).toContain('href="/portfolio/history/" aria-current="page"');
+    expect(history).toContain('href="/portfolio/history/hello-world/"');
+    expect(history).toContain('Newer History');
+    expect(history.indexOf('Newer History')).toBeLessThan(history.indexOf('Hello World'));
+    expect(history).not.toContain('Erlang Hello');
+    const erlang = await output('notes/erlang/hello-world/index.html');
+    expect(erlang).toContain('href="/portfolio/notes/erlang/" aria-current="page"');
+    expect(erlang).toContain('https://test.example.com/portfolio/notes/erlang/hello-world/');
+    const feed = await output('feed.xml');
+    expect(feed).toContain('https://test.example.com/portfolio/history/hello-world/');
+    expect(feed).toContain('https://test.example.com/portfolio/notes/erlang/hello-world/');
+    expect(feed.indexOf('Erlang Hello')).toBeLessThan(feed.indexOf('Newer History'));
+    expect(await output('sitemap.xml')).toContain('<loc>https://test.example.com/portfolio/notes/erlang/</loc>');
+    const photo = await output('photography/test-gallery/test-photo/index.html');
+    expect(photo).toContain('href="/portfolio/history/hello-world/"');
+    expect(photo).not.toContain('/notes/erlang/hello-world/');
+    await expect(access(resolve(dir, 'dist/blog'))).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const postsConfig = resolve(config, 'posts.yaml');
+    const validConfig = await readFile(postsConfig, 'utf8');
+    await writeFile(postsConfig, validConfig.replace('url: /history', 'url: /about'));
+    await expect(build(dir)).rejects.toThrow(/Output path "\/about\/" .*page "about"/);
+    expect(await output('history/index.html')).toBe(history);
+
+    await writeFile(postsConfig, validConfig.replace('source: posts/erlang', 'source: missing'));
+    await expect(build(dir)).rejects.toThrow(/ENOENT.*content\/missing/);
+
+    await writeFile(postsConfig, validConfig.replace('  history:', '  renamed:'));
+    await expect(build(dir)).rejects.toThrow(/post collection "history" not found/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

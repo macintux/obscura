@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% set nav_current = 'blog' %}
+{% set nav_current = nav_key %}
 
 {% block title %}{{ post.frontmatter.title }} — {{ site.title }}{% endblock %}
 {% block description %}{{ post.frontmatter.summary or post.frontmatter.title }}{% endblock %}
@@ -18,7 +18,7 @@
 <meta property="og:image:height" content="{{ og_variant.height }}">
 <meta name="twitter:card" content="summary_large_image">
 {% endif %}
-<meta property="og:url" content="{{ ('/blog/' + post.slug + '/') | absurl }}">
+<meta property="og:url" content="{{ post | posturl | absurl }}">
 {% endblock %}
 
 {% block content %}

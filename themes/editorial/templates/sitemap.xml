@@ -18,12 +18,14 @@
   </url>
   {% endfor %}
   {% endfor %}
+  {% for collection in post_collections %}
   <url>
-    <loc>{{ '/blog/' | absurl }}</loc>
+    <loc>{{ collection.url | absurl }}</loc>
   </url>
+  {% endfor %}
   {% for post in posts %}
   <url>
-    <loc>{{ ('/blog/' + post.slug + '/') | absurl }}</loc>
+    <loc>{{ post | posturl | absurl }}</loc>
   </url>
   {% endfor %}
   {% for page in pages %}
